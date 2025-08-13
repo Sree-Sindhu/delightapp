@@ -1,231 +1,235 @@
+# frontend/app.py
 import streamlit as st
 import base64
-import requests
 import os
-from pages import home # <<< NEW: Import the home_page function from home.py
-
-BASE_URL = "http://127.0.0.1:8000/api/auth"
-
-# --- Page Configuration ---
-# This must be the very first Streamlit command
-st.set_page_config(page_title="DelightAPI - Access", layout="wide")
-
-# --- Function to load and encode image ---
-def get_base64_image(image_path):
-    """Loads an image from the given path and returns its base64 encoded string."""
-    if not os.path.exists(image_path):
-        st.warning(f"Image not found: {image_path}")
-        return ""
-    with open(image_path, "rb") as image_file:
-        return base64.b64encode(image_file.read()).decode()
-
-# --- Load image (ensure this is called before its use in st.markdown) ---
-# Make sure 'register_login.webp' exists in the same directory as app.py
-img_base64 = get_base64_image("register_login.webp")
-
-# --- Custom CSS to force light mode and hide settings ---
-# Using f-string to inject img_base64 directly into the CSS
-st.markdown(f"""
-    <style>
-    /* Force the entire HTML document to use light color scheme */
-    html {{
-        color-scheme: light !important;
-    }}
-
-    /* Ensure the body and main Streamlit app container adhere to light background */
-    body {{
-        background-color: #ffffff !important; /* Fallback white background */
-    }}
-    .stApp {{
-        background-color: #ffffff !important; /* Fallback white background for the app */
-        background-image: url("data:image/webp;base64,{img_base64}"); /* Corrected background image URL */
-        background-size: cover;
-        background-position: center;
-        background-repeat: no-repeat;
-    }}
-
-    /* Hide the entire toolbar which typically contains the hamburger menu and other default Streamlit header elements */
-    div[data-testid="stToolbar"] {{
-        display: none !important;
-        visibility: hidden !important; /* Adding visibility hidden as an extra measure */
-        height: 0 !important; /* Collapse space */
-    }}
-
-    /* Hide the three-dots menu button itself (redundant if stToolbar is hidden, but good for robustness) */
-    button[data-testid="baseButton-header"] {{
-        display: none !important;
-    }}
-
-    /* Hide the entire settings dialog if it pops up, using its data-testid */
-    div[data-testid="stConfigDialog"] {{
-        display: none !important;
-        visibility: hidden !important; /* Adding visibility hidden as an extra measure */
-        height: 0 !important; /* Collapse space */
-    }}
-    
-    /* Ensure the main content block has a light, translucent background */
-    .block-container {{
-        background-color: rgba(255, 255, 255, 0.85); /* Light translucent background */
-        padding: 3rem 2rem;
-        border-radius: 1rem;
-        max-width: 600px;
-        margin: 5rem auto;
-        box-shadow: 0 0 25px rgba(0,0,0,0.1);
-    }}
-    .form-title {{
-        text-align: center;
-        font-size: 2rem;
-        font-weight: bold;
-        color: #8e44ad; /* A shade of purple */
-        margin-bottom: 1.5rem;
-    }}
-    button[kind="primary"] {{
-        background-color: #e63946; /* Red */
-        color: white;
-        font-weight: bold;
-        border-radius: 8px;
-        padding: 0.75rem;
-        margin-top: 1rem;
-        width: 100%;
-        border: none;
-        font-size: 1rem;
-    }}
-    button[kind="primary"]:hover {{
-        background-color: #c62828; /* Darker red on hover */
-    }}
-    a {{
-        color: #007bff; /* Blue */
-        text-decoration: none;
-        font-size: 0.9rem;
-    }}
-    a:hover {{
-        text-decoration: underline;
-    }}
-    </style>
-    <head>
-        <meta name="color-scheme" content="light">
-    </head>
-""", unsafe_allow_html=True)
+from app_pages import login, register, home
 
 # --- Session State for Page Navigation ---
 if "page" not in st.session_state:
-    st.session_state.page = "login" # Default to login page
+    st.session_state.page = "landing"
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "username" not in st.session_state:
+    st.session_state.username = None
+if "ui_theme" not in st.session_state:
+    st.session_state.ui_theme = "auto"
+active_theme = st.session_state.ui_theme
 
-# --- Page Switchers ---
-def switch_to_register():
-    st.session_state.page = "register"
+# --- Page Configuration and Styling ---
+st.set_page_config(page_title="DelightAPI", layout="wide")
 
-def switch_to_login():
-    st.session_state.page = "login"
+def get_base64_image(image_path: str) -> str:
+    """Return base64 string for an image path or empty string if missing."""
+    try:
+        with open(image_path, "rb") as image_file:
+            return base64.b64encode(image_file.read()).decode()
+    except FileNotFoundError:
+        return ""
 
-def switch_to_home(): # <<< NEW: Function to switch to home page
-    st.session_state.page = "home"
+def resolve_login_image() -> str:
+    """Find a login background image inside the local images folder.
+    Preference order: login.jpeg, login.jpg, login.png, first file containing 'login' in name, else ''.
+    Returns absolute file path or '' if not found.
+    """
+    # app.py lives in frontend/, images folder is frontend/images
+    images_dir = os.path.join(os.path.dirname(__file__), 'images')
+    if not os.path.isdir(images_dir):
+        st.warning("'images' folder not found next to app.py")
+        return ''
+    candidates = [
+        os.path.join(images_dir, "login.jpeg"),
+        os.path.join(images_dir, "login.jpg"),
+        os.path.join(images_dir, "login.png"),
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    # fallback: any file with 'login' in name
+    for fname in os.listdir(images_dir):
+        if 'login' in fname.lower():
+            fpath = os.path.join(images_dir, fname)
+            if os.path.isfile(fpath):
+                return fpath
+    return ''
 
-# --- Main Application Logic ---
-# If logged in, show the home page; otherwise, show login/register
-if st.session_state.get("logged_in"): # <<< MODIFIED: Check if 'logged_in' is True
-    # Display the home page content
-    home(st.session_state.get('email', 'User')) # Pass user email to home page
+image_file_path = resolve_login_image()
+img_base64 = get_base64_image(image_file_path) if image_file_path else ""
+if not img_base64:
+    st.warning("Login background image not found. Place 'login.jpeg' (or .jpg/.png) in the images folder.")
 
-    # Add a logout button on the home page
-    if st.button("Logout"):
-        try:
-            headers = {'Authorization': f'Token {st.session_state.token}'}
-            requests.post(f"{BASE_URL}/logout/", headers=headers)
-        except Exception as e:
-            st.warning(f"Could not log out from backend: {e}")
+st.markdown(f"""
+    <style>
+    .stApp {{
+        {f'background-image: url("data:image/jpeg;base64,{img_base64}");' if img_base64 else 'background: linear-gradient(135deg,#000080,#ff3c6f);'}
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        min-height: 100vh;
+        position: relative;
+    }}
+    .stApp:before {{ /* subtle dark overlay for readability */
+        content: '';
+        position: absolute; inset:0;
+        background: rgba(0,0,0,0.15);
+        pointer-events:none;
+    }}
+    body.theme-dark .stApp:before {{
+        background: rgba(0,0,0,0.35);
+    }}
+    /* Make the main block full-width with comfortable padding */
+    .block-container {{
+        max-width: 100% !important;
+        padding: 2rem 3.5rem 4rem 3.5rem;
+        margin: 0 auto;
+        background: rgba(255,255,255,0.78);
+        backdrop-filter: blur(6px) saturate(135%);
+        -webkit-backdrop-filter: blur(6px) saturate(135%);
+        border-radius: 0;
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.55), 0 10px 40px -12px rgba(0,0,0,0.45);
+        position: relative;
+        z-index: 1;
+        transition: background .35s ease; 
+    }}
+    body.theme-dark .block-container {{
+        background: rgba(18,20,26,0.70);
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06), 0 14px 48px -14px rgba(0,0,0,0.75);
+    }}
+    /* Optional utility wrapper for centering small forms if needed */
+    .narrow-form {{
+        max-width: 760px;
+        margin: 0 auto 3rem auto;
+        padding: 2.2rem 2.4rem 2.6rem;
+        background: #ffffffee;
+        border: 1px solid #ececec;
+        box-shadow: 0 4px 18px -6px rgba(0,0,0,0.12);
+        border-radius: 18px;
+    }}
+    .form-title {{
+        text-align: center;
+        font-size: 2.2rem;
+        font-weight: 700;
+        color: #8e44ad;
+        margin: 0 0 1.25rem 0;
+        letter-spacing: .5px;
+    }}
+    .landing-hero h2 {{
+        font-size: 2.4rem;
+        margin-bottom: .4rem;
+        line-height: 1.15;
+        background: linear-gradient(90deg,#ff3c6f,#000080);
+        -webkit-background-clip: text;
+        color: transparent;
+    }}
+    .landing-hero p {{
+        font-size: 1.05rem;
+        opacity: .85;
+        margin-bottom: 2rem;
+    }}
+    .landing-actions .stButton > button {{
+        background: linear-gradient(90deg,#000080,#ff3c6f);
+        color:#fff;
+        font-weight:600;
+        border:none;
+        padding: .9rem 1.4rem;
+        border-radius: 10px;
+        font-size:1rem;
+        transition: all .18s ease;
+        width:100%;
+        box-shadow:0 4px 12px -3px rgba(0,0,0,0.25);
+    }}
+    .landing-actions .stButton > button:hover {{
+        transform: translateY(-2px);
+        box-shadow:0 8px 20px -5px rgba(0,0,0,0.35);
+        background: linear-gradient(90deg,#ff3c6f,#000080);
+    }}
+    .two-col-auth {{
+        display: grid;
+        grid-template-columns: repeat(auto-fit,minmax(320px,1fr));
+        gap: 2.2rem;
+        align-items: start;
+        margin-top: 1.2rem;
+    }}
+    .feature-grid {{
+        display:grid;
+        gap:1.2rem;
+        grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+        margin: 2.2rem 0 1rem;
+    }}
+    .feature-card {{
+        background:rgba(255,255,255,0.85);
+        border:1px solid #ececec;
+        padding:1rem .9rem 1.15rem;
+        border-radius:16px;
+        box-shadow:0 4px 16px -6px rgba(0,0,0,0.15);
+        transition:.18s;
+        backdrop-filter:blur(4px) saturate(140%);
+    }}
+    body.theme-dark .feature-card {{
+        background:rgba(28,32,40,0.72);
+        border:1px solid rgba(255,255,255,0.10);
+        box-shadow:0 6px 20px -8px rgba(0,0,0,0.85);
+    }}
+    .feature-card:hover {{
+        transform:translateY(-4px);
+        box-shadow:0 6px 18px -5px rgba(0,0,0,0.18);
+        border-color:#ff3c6f55;
+    }}
+    body.theme-dark .feature-card:hover {{
+        border-color:#ff3c6f99;
+        box-shadow:0 10px 26px -8px rgba(0,0,0,0.9);
+    }}
+    </style>
+     <script>
+     (function() {{
+         try {{
+            const b = (window.parent && window.parent.document && window.parent.document.body) || document.body;
+            b.classList.remove('theme-dark','theme-light');
+            const mode = '{active_theme}';
+            if (mode === 'dark') {{ b.classList.add('theme-dark'); }}
+            else if (mode === 'light') {{ b.classList.add('theme-light'); }}
+            else {{
+                const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                b.classList.add(prefersDark ? 'theme-dark' : 'theme-light');
+            }}
+         }} catch(e) {{ console.warn('theme script', e); }}
+     }})();
+     </script>
+""", unsafe_allow_html=True)
 
-        # Clear session state and redirect to login
-        del st.session_state["token"]
-        del st.session_state["logged_in"]
-        del st.session_state["email"]
-        st.session_state.page = "login"
-        st.rerun()
+# --- Navigation Logic ---
+if st.session_state.logged_in:
+    home.main_page()
+else:
+    st.markdown('<div class="form-title">🍰 Welcome to DelightAPI!</div>', unsafe_allow_html=True)
+    st.markdown("""
+        <div class="landing-hero">
+            <h2>Fresh, Customized Cakes Delivered Fast</h2>
+            <p>Create, personalize, track and enjoy – all in one seamless experience.</p>
+        </div>
+    """, unsafe_allow_html=True)
 
-else: # Not logged in, show login/register forms
-    with st.container():
-        st.markdown('<div class="form-title">🍰 DelightAPI</div>', unsafe_allow_html=True)
+    # Feature highlight grid (optional visual richness)
+    st.markdown("""
+        <div class="feature-grid">
+            <div class="feature-card">🎨 Custom Designs<br><small>Personalize messages & styles.</small></div>
+            <div class="feature-card">🚚 Live Tracking<br><small>Know where your cake is.</small></div>
+            <div class="feature-card">🛒 Smart Cart<br><small>Update items in real time.</small></div>
+            <div class="feature-card">⭐ Reviews<br><small>Trusted by dessert lovers.</small></div>
+        </div>
+    """, unsafe_allow_html=True)
 
-        if st.session_state.page == "login":
-            with st.form("login_form"):
-                st.subheader("Sign In")
-                email = st.text_input("Email")
-                password = st.text_input("Password", type="password")
-                login_submit = st.form_submit_button("Sign In")
+    st.markdown("<div class='landing-actions'></div>", unsafe_allow_html=True)
+    auth_cols = st.columns(2)
+    with auth_cols[0]:
+        if st.button("Login", key="landing_login"):
+            st.session_state.page = "login"
+            st.rerun()
+    with auth_cols[1]:
+        if st.button("Register", key="landing_register"):
+            st.session_state.page = "register"
+            st.rerun()
 
-                if login_submit:
-                    if not email.strip() or not password.strip():
-                        st.error("🚫 Please enter both email and password.")
-                    else:
-                        data = {
-                            "username": email.split('@')[0],
-                            "password": password
-                        }
-
-                        try:
-                            res = requests.post(f"{BASE_URL}/login/", json=data)
-                            if res.status_code == 200:
-                                token = res.json().get("token")
-                                st.success("✅ Login successful!")
-                                st.session_state["token"] = token
-                                st.session_state["logged_in"] = True
-                                st.session_state["email"] = email
-                                st.session_state.page = "home" # <<< NEW: Switch to home page on successful login
-                                st.rerun()
-                            else:
-                                st.error(f"❌ Invalid credentials. {res.json().get('error', '')}")
-                        except requests.exceptions.ConnectionError:
-                            st.error("⚠️ Could not connect to backend. Please ensure the Django server is running.")
-                        except Exception as e:
-                            st.error(f"⚠️ An unexpected error occurred: {e}")
-
-            st.button("New user? Sign Up", on_click=switch_to_register)
-
-        elif st.session_state.page == "register":
-            with st.form("register_form"):
-                st.subheader("Sign Up")
-                full_name = st.text_input("Full Name")
-                mobile = st.text_input("Mobile Number")
-                address = st.text_area("Address")
-                email = st.text_input("Email")
-                gender = st.selectbox("Gender", ["Male", "Female", "Other", "Prefer not to say"])
-                location = st.selectbox("Select Location", ["Hyderabad", "Bangalore", "Mumbai"])
-                password = st.text_input("Password", type="password")
-                confirm_password = st.text_input("Confirm Password", type="password")
-
-                register_submit = st.form_submit_button("Register")
-
-                if register_submit:
-                    if not all([full_name.strip(), mobile.strip(), address.strip(), email.strip(), password.strip(), confirm_password.strip()]):
-                        st.error("🚫 Please fill in all the required fields.")
-                    elif password != confirm_password:
-                        st.error("🔐 Passwords do not match.")
-                    else:
-                        username = email.split('@')[0]
-                        data = {
-                            "username": username,
-                            "email": email,
-                            "password": password,
-                            "first_name": full_name.split()[0],
-                            "last_name": " ".join(full_name.split()[1:]) if len(full_name.split()) > 1 else "",
-                            "phone_number": mobile,
-                            "gender": gender[0],
-                            "address": address
-                        }
-
-                        try:
-                            res = requests.post(f"{BASE_URL}/register/", json=data)
-                            if res.status_code == 200 or res.status_code == 201:
-                                st.success("🎉 Registered successfully! Please log in.")
-                                st.session_state.page = "login"
-                                st.rerun()
-                            else:
-                                st.error(f"❌ Registration failed: {res.json().get('error', 'Unknown error')}")
-                        except requests.exceptions.ConnectionError:
-                            st.error("⚠️ Could not connect to backend. Please ensure the Django server is running.")
-                        except Exception as e:
-                            st.error(f"⚠️ An unexpected error occurred: {e}")
-
-            st.button("Already have an account? Sign In", on_click=switch_to_login)
-
-    st.markdown('</div>', unsafe_allow_html=True)
+    if st.session_state.page == "login":
+        login.login_page()
+    elif st.session_state.page == "register":
+        register.register_page()
