@@ -28,7 +28,20 @@ def main_page():
         col1, col2 = st.columns(2)
         with col1:
             phone = st.text_input("Phone number", profile_data.get('phone_number', ''))
-            gender = st.selectbox("Gender", ['-','M','F','O'], index=['-','M','F','O'].index(profile_data.get('gender','-')))
+            
+            # --- FIX STARTS HERE ---
+            gender_options = ['-','M','F','O']
+            gender_from_data = profile_data.get('gender', '-')
+            
+            # Safely get the index, defaulting to 0 if the value is not in the list
+            try:
+                default_index = gender_options.index(gender_from_data)
+            except ValueError:
+                default_index = 0
+                
+            gender = st.selectbox("Gender", gender_options, index=default_index)
+            # --- FIX ENDS HERE ---
+            
             first_name = st.text_input("First name", profile_data.get('first_name', st.session_state.get('username','')))
         with col2:
             last_name = st.text_input("Last name", profile_data.get('last_name', ''))
@@ -144,12 +157,15 @@ def main_page():
         a1, a2 = st.columns(2)
         with a1:
             flat = st.text_input("Flat/House No.")
-            build = st.text_input("Building/Apartment")
-            street = st.text_input("Street")
-            area = st.text_input("Area/Colony")
-            city = st.text_input("City")
         with a2:
+            build = st.text_input("Building/Apartment")
+        street = st.text_input("Street")
+        area = st.text_input("Area/Colony")
+        a3, a4 = st.columns(2)
+        with a3:
+            city = st.text_input("City")
             state = st.text_input("State")
+        with a4:
             pincode = st.text_input("Pincode")
             landmark = st.text_input("Landmark (optional)")
         if st.button("Save address"):

@@ -5,16 +5,11 @@ from .views import (
     DeliveryAgentViewSet, CustomerSignupView, LoginView, LogoutView,
     CustomerProfileView, UserView, DeleteAccountView, ChangePasswordView,
     sales_analytics, top_selling_cakes, UpdateAgentLocationView,
-    ReviewViewSet, CategoryViewSet
+    ReviewViewSet, CategoryViewSet, StoreReviewViewSet, PasswordResetView
 )
 from django.http import HttpResponse
 
 # A router automatically handles URL patterns for ViewSets
-# This creates URLs like:
-# /cakes/, /cakes/{pk}/
-# /stores/, /stores/{pk}/
-# /orders/, /orders/{pk}/, /orders/{pk}/cancel/, etc.
-# /addresses/, /addresses/{pk}/
 router = DefaultRouter()
 router.register(r'cakes', CakeViewSet, basename='cake')
 router.register(r'stores', StoreViewSet, basename='store')
@@ -24,18 +19,12 @@ router.register(r'addresses', AddressViewSet, basename='address')
 router.register(r'agents', DeliveryAgentViewSet, basename='agent')
 router.register(r'reviews', ReviewViewSet, basename='review')
 router.register(r'categories', CategoryViewSet, basename='category')
-
-# A simple home view for the root URL
-def index(request):
-    return HttpResponse("<h1>Welcome to DelightAPI Backend!</h1><p>API endpoints are under /api/</p>")
+router.register(r'store-reviews', StoreReviewViewSet, basename='store-review')
 
 urlpatterns = [
-    path('', index, name='home'),
+    path('', include(router.urls)), # Router URLs (e.g. /cakes/, /stores/)
     
-    # All API endpoints are now under a single '/api/' prefix for clarity
-    path('api/', include(router.urls)),
-    
-    # --- Authentication & Profile URLs (APIViews, not ViewSets) ---
+    # Authentication & Profile URLs
     path('auth/register/', CustomerSignupView.as_view(), name='customer-signup'),
     path('auth/login/', LoginView.as_view(), name='login'),
     path('auth/logout/', LogoutView.as_view(), name='logout'),
@@ -43,11 +32,12 @@ urlpatterns = [
     path('auth/profile/', CustomerProfileView.as_view(), name='customer-profile'),
     path('auth/delete-account/', DeleteAccountView.as_view(), name='delete-account'),
     path('auth/change-password/', ChangePasswordView.as_view(), name='change-password'),
+    path('auth/password-reset/', PasswordResetView.as_view(), name='password-reset'),
 
-    # --- Analytics URLs (@api_view function-based views) ---
+    # Analytics URLs
     path('analytics/sales/', sales_analytics, name='sales-analytics'),
     path('analytics/top-cakes/', top_selling_cakes, name='top-cakes'),
 
-    # --- Specific Agent Action ---
+    # Specific Agent Action
     path('agents/<int:agent_id>/location-update/', UpdateAgentLocationView.as_view(), name='agent-location-update'),
 ]
